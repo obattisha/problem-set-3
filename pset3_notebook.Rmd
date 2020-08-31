@@ -1,0 +1,270 @@
+---
+title: "Battisha PSet 3"
+output: pdf_document
+---
+
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(caret)
+library(ipred)
+library(kernlab)
+library(ISLR)
+library(broom)
+library(rsample)
+library(rcfss)
+library(yardstick)
+library(ggplot2)
+library(randomForest)
+library(tree)
+library(MASS)
+library(gbm)
+library(e1071)
+library(ModelMetrics)
+```
+
+
+### Decision Trees
+
+##Part 1
+```{r}
+#load anes data
+anes <- read.csv("nes2008.csv")
+```
+
+
+```{r}
+#set seed
+set.seed(321)
+
+#set p
+p <- anes %>%
+  dplyr::select(female, age, educ, dem, rep)
+
+#set lambda
+lambda <- seq(from=0.0001, to=0.04, by=0.001)
+
+```
+
+##Part 2
+```{r}
+#Create Training and Testing Sets
+
+#sample 0.75 of random row numbers from data without replacement
+trees_sampling <- sample(nrow(anes), .75*nrow(anes), replace=FALSE)
+
+#use 0.75 of rows as training data
+trees_training <- anes[trees_sampling,]
+
+#use rest as testing data
+trees_testing <- anes[-trees_sampling,]
+```
+
+
+##Part 3
+
+```{r}
+#Loop over values of lambda
+training_mse <- c()
+testing_mse <- c()
+for (i in lambda){
+  #Fit the boosted trees model using only the training observations
+  loop_boost <- gbm(biden ~ ., 
+                    data=trees_training,
+                    distribution="gaussian",
+                    n.trees=1000,
+                    shrinkage=i,
+                    interaction.depth = 4)
+  
+  #Predict values of training dataset using model based on training dataset
+  loop_training_prediction<- predict(loop_boost, newdata = trees_training, n.trees=1000)
+  
+  #Predict values of testing dataset using model based on training dataset
+  loop_testing_prediction<- predict(loop_boost, newdata = trees_testing, n.trees=1000)
+  
+  #Append training mse to array
+  training_mse <- append(training_mse, mse(trees_training$biden, loop_training_prediction))
+  
+  #Append testing mse to array
+  testing_mse <- append(testing_mse, mse(trees_testing$biden, loop_testing_prediction))
+}
+```
+
+```{r}
+#Plot Values
+training_df <- data.frame (lambdas  = lambda,
+                  training_mses = training_mse)
+testing_df <- data.frame (lambdas = lambda,
+                          testing_mses = testing_mse)
+
+
+plot(training_df, type="l", col="green", xlab="Lambda Values",ylab="Mean Standard Errors")
+lines(testing_df, col="red")
+legend(0.02,500,legend=c("Training MSE", "Testing MSE"), col=c("green", "red"), lty=1)
+```
+
+##Part 4
+```{r}
+#Find MSE for Testing Set for Boosting with Lambda of 0.01
+
+#Fit Model
+setlambda_boost <- gbm(biden ~ ., 
+                  data=trees_training,
+                  distribution="gaussian",
+                  n.trees=1000,
+                  shrinkage=0.01,
+                  interaction.depth = 4)
+
+#Generate Prediction of Testing Set
+setlambda_prediction <- predict(setlambda_boost, newdata = trees_testing, n.trees=1000)
+
+#Calculate MSE
+mse(trees_testing$biden, setlambda_prediction)
+```
+
+##Part 5
+
+```{r}
+#Bagging
+
+#Fit Model
+bagg <- bagging(biden ~ ., 
+                data=trees_training)
+
+#Generate Prediction of Testing Set
+bagg_prediction <- predict(bagg, newdata = trees_testing)
+
+#Calculate MSE
+mse(trees_testing$biden, bagg_prediction)
+```
+
+
+##Part 6
+```{r}
+#Random Forest
+
+#Fit Model
+rf <- randomForest(biden ~ ., 
+                  data=anes,
+                  subset=trees_sampling)
+
+#Generate Prediction of Testing Set
+rf_prediction <- predict(rf, newdata = trees_testing)
+
+#Calculate MSE
+mse(trees_testing$biden, rf_prediction)
+```
+
+##Part 7
+```{r}
+#Linear Model
+
+#Fit Model
+lm <- glm(biden ~ ., 
+         data=trees_training)
+
+#Generate Prediction of Testing Set
+lm_prediction <- predict(lm, newdata = trees_testing)
+
+#Calculate MSE
+mse(trees_testing$biden, lm_prediction)
+```
+
+##Part 8
+
+I found that Boosting (with lambda of 0.01) had a MSE of 394.54, the Linear Model had a MSE of 397.20, Bagging had a MSE of 401.00 and Random Forest 411.6193. From these results it appears that the Boosted trees were the best fitting model, as they had the least test error. However, in terms of finding a comporomise between reduced resource usage and low error, the Linear Model would work very well, as it had a comparably low MSE with the Boosted trees, with much less time required to run. 
+
+It's also important to note that all the MSEs were quite close to each other--in my tests with multiple seeds, I found instances where Random Forest was best (Seed 777), and instances where the Linear Model was best (Seed 380). To most effectively determine the best fitting model for use, one would optimally perform each fit thousands of times and compare the averages of the MSEs. 
+
+
+###Support Vector Machines
+
+##Part 1
+```{r}
+#Create Training and Testing Sets
+
+#Import Data
+oranges <- OJ
+
+#Set Purchase variable to factor
+oranges$Purchase <-as.factor(oranges$Purchase)
+
+#set seed
+set.seed(34342)
+
+#sample 800 random row numbers from data without replacement
+svm_sampling <- sample(nrow(oranges), 800, replace=FALSE)
+
+#use 800 rows as training data
+svm_training <- oranges[svm_sampling,]
+
+#use rest as testing data
+svm_testing <- oranges[-svm_sampling,]
+```
+
+##Part 2
+```{r}
+svmfit <- svm(Purchase ~ ., 
+              data = svm_training, 
+              kernel = "linear", 
+              cost = .01)
+summary(svmfit)
+```
+The SVM fit had a total of 424 support vectors, 213 in one class and 211 in the other. After testing various kernels, I decided upon a linear kernel, as it seemed to produce the most accurate results. The cost parameter was set to 0.01 to help maintain a balanced outcome. 
+
+#Part 3
+```{r}
+#Confusion Matrix and Accuracy for Training Data
+print("For Training Data")
+caret::confusionMatrix(data=predict(svmfit, svm_training), reference=svm_training$Purchase)
+
+#Confusion Matrix and Accuracy for Testing Data
+print("For Testing Data")
+caret::confusionMatrix(data=predict(svmfit, svm_testing), reference=svm_testing$Purchase)
+```
+For the classification solution, the confusion matrix revealed 442 True Positives (CH), 228 True Negatives (MM), 75 False Positives and 55 False Negatives. 
+
+For our testing set predictions, the confusion matrix revealed that we had 136 True Positives, 84 True Negatives, 30 False Positives and 20 False Negatives. 
+
+In total, there was an accuracy of 83.75% for the training set, and 81.48% for the test set. The relatively high level of accuracy and small difference between the test and training percentages shows that we did a good job minimizing both bias and variance. 
+
+
+#Part 4
+```{r}
+#Tune SVM for various cost variables
+tuned_svm <- tune.svm(Purchase~.,
+         data=svm_training,
+         kernel = "linear",
+         cost = 10^seq(from=-2, to=3, by=0.5))
+```
+
+
+```{r}
+#Find Best Tuned Cost Variable
+tuned_fit <- tuned_svm$best.model
+summary(tuned_fit)
+```
+My tuner found that tuning C to 3.16227 (10^0.5) offered the most optimal result. The tuned fit had 318 support vectors, with 157 in the first class and 161 in the second class. 
+
+
+#Part 5
+```{r}
+#Confusion Matrix and Accuracy for Tuned Model
+
+#For Training Data
+print("For Training Data")
+caret::confusionMatrix(data=predict(tuned_fit, svm_training), reference=svm_training$Purchase)
+
+#For Testing Data
+print("For Testing Data")
+caret::confusionMatrix(data=predict(tuned_fit, svm_testing), reference=svm_testing$Purchase)
+
+#Accuracy Rates:
+1-0.8438
+1-0.8296
+```
+This optimally tuned classifier performed marginally better than my untuned classifier. For the training set, while my untuned classifier was 83.75% accurate, my tuned classifer was 84.38% accurate (with a corresponding error rate of 15.63%). Similarly, for the test set, my untuned classifier was 81.485 accurate, while my tuned classifier was 82.96% accurate (with a corresponding error rate of 17.04%). Thus the tuning gave me about 1% more accuracy with my classifier, which, while better than before, is not a substantial increase. In fact, considering the amount of time and proccessing it took to tune my classifier, the 1% increase in accuracy is quite insignificant. Thus, even though my optimally tuned classifier was more accurate, the accuracy doesn't seem to be worth the efficiency cost. 
+
+Looking at my confusion matricies, it seems that the tuned classifier became better at minimizing False Negatives, but still retained roughly the same number of False Positives. 
+
